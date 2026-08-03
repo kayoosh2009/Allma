@@ -14,8 +14,8 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL_ID = _int("CHANNEL_ID", 0)
 REACTION_CHAT_ID = _int("REACTION_CHAT_ID", 0)
 
-OLLAMA_API_KEY = os.environ["OLLAMA_API_KEY"]
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:cloud")
+OLLAMA_API_KEYS = [k.strip() for k in os.environ["OLLAMA_API_KEYS"].split(",") if k.strip()]
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:cloud")
 
 BOT_NAME = os.environ.get("BOT_NAME", "Бот")
 BOT_PERSONA = os.environ.get(
