@@ -5,9 +5,11 @@ from ollama import Client
 
 import config
 
+api_key = config.OLLAMA_API_KEYS[0] if config.OLLAMA_API_KEYS else ""
+
 _client = Client(
     host="https://ollama.com",
-    headers={"Authorization": "Bearer " + config.OLLAMA_API_KEY},
+    headers={"Authorization": "Bearer " + api_key},
 )
 
 
