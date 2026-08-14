@@ -88,9 +88,20 @@ def should_answer(message: Message) -> bool:
     return random.random() < GROUP_RANDOM_ANSWER_CHANCE
 
 
-async def human_pause(text: str) -> None:
+async def human_delay() -> None:
+    """
+    Случайная задержка перед тем, как начать печатать (3-15 секунд).
+    """
+    delay = random.uniform(3.0, 15.0)
+    await asyncio.sleep(delay)
+
+
+async def typing_pause(text: str) -> None:
+    """
+    Задержка имитирующая набор текста.
+    """
     words = len(text.split())
-    delay = min(0.8 + words * 0.1 + random.uniform(0.1, 0.8), 7.0)
+    delay = min(1.0 + words * 0.15 + random.uniform(0.5, 1.5), 8.0)
     await asyncio.sleep(delay)
 
 
@@ -174,24 +185,26 @@ async def process_message(
     async with lock:
         await save_user(message.from_user)
         history = await get_history(chat_id, MEMORY_LIMIT)
-        
         display_text = (text or "").strip()
         if file_path:
             display_text = f"{display_text}\n[вложение: {Path(file_path).name}]".strip()
         if not display_text:
             display_text = "[пустое сообщение]"
-
         await add_message(
             chat_id=chat_id,
             user_id=message.from_user.id,
             role="user",
             content=display_text,
         )
-
+        
+        # Шаг 1: Случайная задержка перед "чтением" сообщения (3-15 сек)
+        await human_delay()
+        
+        # Шаг 2: Показываем "печатает..."
         typing_task = asyncio.create_task(typing_keeper(message.bot, chat_id))
-
+        
         try:
-            await asyncio.sleep(random.uniform(0.4, 1.4))
+            # Генерируем ответ пока показываем "печатает..."
             try:
                 answer = await generate_response(
                     history=history,
@@ -200,35 +213,40 @@ async def process_message(
                 )
             except Exception as exc:
                 logging.exception("Generation error: %s", exc)
-                answer = random.choice([
-                    "Что-то я зависла... Попробуй еще раз.",
-                    "Мне сейчас трудно собраться с мыслями. Повтори?",
-                    "Хм, у меня что-то оборвалось. Напиши еще раз?",
-                ])
-
+                answer = random.choice(
+                    [
+                        "Что-то я зависла... Попробуй еще раз.",
+                        "Мне сейчас трудно собраться с мыслями. Повтори?",
+                        "Хм, у меня что-то оборвалось. Напиши еще раз?",
+                    ]
+                )
+            
             clean_text, gif_tag = extract_gif_tag(answer)
             if not clean_text and gif_tag is None:
                 clean_text = "Хм... кажется, я потеряла мысль."
-
+            
+            # Сохраняем ответ в историю
             await add_message(
                 chat_id=chat_id,
                 user_id=message.bot.id,
                 role="assistant",
                 content=clean_text or "[гифка]",
             )
-
+            
+            # Шаг 3: Небольшая пауза "набора текста" перед отправкой
             if clean_text:
-                await human_pause(clean_text)
-
+                await typing_pause(clean_text)
+                
         finally:
             typing_task.cancel()
-
+        
+        # Отправляем ответ
         if clean_text:
             await send_long_message(message, clean_text)
-
+        
         if gif_tag is not None:
             await send_random_gif(message, gif_tag or None)
-
+        
         if file_path:
             with suppress(Exception):
                 Path(file_path).unlink(missing_ok=True)
