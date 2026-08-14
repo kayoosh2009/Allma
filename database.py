@@ -201,13 +201,11 @@ async def add_gif(
 async def get_random_gif(tag: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """
     Возвращает случайную гифку.
-
     Если tag указан, сначала ищет по тегу.
     Если не находит, возвращает любую случайную.
     """
     async with aiosqlite.connect(get_db_path()) as db:
         db.row_factory = aiosqlite.Row
-
         if tag:
             cursor = await db.execute(
                 """
@@ -220,12 +218,9 @@ async def get_random_gif(tag: Optional[str] = None) -> Tuple[Optional[str], Opti
                 """,
                 (tag, f"%{tag}%"),
             )
-
             row = await cursor.fetchone()
-
             if row:
                 return row["file_id"], row["caption"]
-
         cursor = await db.execute(
             """
             SELECT file_id, caption
@@ -234,10 +229,42 @@ async def get_random_gif(tag: Optional[str] = None) -> Tuple[Optional[str], Opti
             LIMIT 1
             """
         )
-
         row = await cursor.fetchone()
-
         if not row:
             return None, None
-
         return row["file_id"], row["caption"]
+
+
+async def save_incoming_gif(
+    file_id: str,
+    file_unique_id: str,
+    emoji: Optional[str] = None,
+    chat_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+) -> None:
+    """
+    Сохраняет гифку, которую прислали Альме.
+    Emoji используется как тег.
+    """
+    async with aiosqlite.connect(get_db_path()) as db:
+        await db.execute(
+            """
+            INSERT INTO gifs (
+                file_id,
+                file_unique_id,
+                tag,
+                caption,
+                chat_id
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(file_id) DO NOTHING
+            """,
+            (
+                file_id,
+                file_unique_id,
+                emoji,  # emoji как тег
+                emoji,  # emoji как caption для простоты
+                chat_id,
+            ),
+        )
+        await db.commit()
