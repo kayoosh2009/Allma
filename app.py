@@ -10,7 +10,7 @@ import random
 import tempfile
 from contextlib import suppress
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Tuple
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ChatAction
@@ -24,6 +24,7 @@ from database import (
     add_message,
     get_history,
     clear_history,
+    get_random_gif,
 )
 
 # --- Буферизация сообщений (чтобы ждать, пока пользователь допечатает) ---
