@@ -238,7 +238,7 @@ async def process_message(
 # Handlers
 # ----------------------------
 
-@router.message(CommandStart())
+@router.message(Command(commands=["start"]))
 async def cmd_start(message: Message) -> None:
     if not message.from_user:
         return
