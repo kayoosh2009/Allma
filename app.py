@@ -26,6 +26,7 @@ from database import (
     clear_history,
     add_gif,
     get_random_gif,
+    save_incoming_gif,
 )
 
 ensure_env_loaded()
