@@ -584,4 +584,90 @@ async def cmd_add_gif(message: Message) -> None:
         await message.answer("Это не похоже на гифку.")
         return
 
-    parts = (message.text or "").
+    parts = (message.text or "").split(maxsplit=1)
+    tag = parts[1].strip() if len(parts) > 1 else None
+    caption = reply.caption or tag
+
+    await add_gif(
+        file_id=file_id,
+        file_unique_id=unique_id,
+        tag=tag,
+        caption=caption,
+        chat_id=message.chat.id,
+    )
+
+    await message.answer("Гифка сохранена.")
+
+
+@router.message(F.photo | F.document | F.animation | F.video | F.audio | F.voice)
+async def handle_media(message: Message) -> None:
+    if not message.from_user:
+        return
+
+    if message.chat.type != "private" and not should_answer(message):
+        return
+
+    file_path = await download_message_file(message)
+    caption = message.caption or ""
+
+    if file_path is None and not caption:
+        await message.answer("Не смогла прочитать файл или он слишком большой.")
+        return
+
+    await process_message(message, caption, file_path)
+
+
+@router.message(F.text)
+async def handle_text(message: Message) -> None:
+    if not message.from_user:
+        return
+
+    if not should_answer(message):
+        return
+
+    await process_message(message, message.text or "")
+
+
+# ----------------------------
+# Bot startup
+# ----------------------------
+
+
+async def set_commands(bot: Bot) -> None:
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Начать общение"),
+            BotCommand(command="help", description="Что я умею"),
+            BotCommand(command="gif", description="Случайная гифка"),
+            BotCommand(command="reset", description="Очистить память чата"),
+            BotCommand(command="add_gif", description="Добавить гифку"),
+        ]
+    )
+
+
+async def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+
+    if not BOT_TOKEN:
+        raise SystemExit("BOT_TOKEN не найден. Добавь его в .env")
+
+    await init_db()
+
+    bot = Bot(token=BOT_TOKEN)
+    dp = Dispatcher()
+
+    dp.include_router(router)
+
+    await set_commands(bot)
+
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        print("Альма остановлена.")
