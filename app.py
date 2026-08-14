@@ -24,10 +24,47 @@ from database import (
     add_message,
     get_history,
     clear_history,
-    add_gif,
-    get_random_gif,
-    save_incoming_gif,
 )
+
+# --- Буферизация сообщений (чтобы ждать, пока пользователь допечатает) ---
+USER_BUFFERS: Dict[int, List[Tuple[str, Message]]] = {}
+USER_TIMERS: Dict[int, asyncio.Task] = {}
+
+async def handle_user_input(message: Message, text: str) -> None:
+    """
+    Кладет сообщение в буфер и запускает таймер.
+    Если за 4 секунды придет еще сообщение, таймер сбросится.
+    """
+    chat_id = message.chat.id
+    
+    if chat_id not in USER_BUFFERS:
+        USER_BUFFERS[chat_id] = []
+        
+    USER_BUFFERS[chat_id].append((text, message))
+    
+    if chat_id in USER_TIMERS:
+        USER_TIMERS[chat_id].cancel()
+        
+    async def wait_and_process():
+        try:
+            await asyncio.sleep(4.0)  # Ждем 4 секунды
+        except asyncio.CancelledError:
+            return
+            
+        buffer = USER_BUFFERS.pop(chat_id, [])
+        USER_TIMERS.pop(chat_id, None)
+        
+        if not buffer:
+            return
+            
+        # Соединяем все сообщения в одно с пустой строкой между ними
+        combined_text = "\n\n".join([item[0] for item in buffer])
+        last_message = buffer[-1][1]  # Отвечаем на последнее сообщение
+        
+        await process_message(last_message, combined_text)
+        
+    task = asyncio.create_task(wait_and_process())
+    USER_TIMERS[chat_id] = task
 
 ensure_env_loaded()
 
@@ -190,26 +227,29 @@ async def process_message(
     async with lock:
         await save_user(message.from_user)
         history = await get_history(chat_id, MEMORY_LIMIT)
+        
         display_text = (text or "").strip()
         if file_path:
             display_text = f"{display_text}\n[вложение: {Path(file_path).name}]".strip()
         if not display_text:
             display_text = "[пустое сообщение]"
+
         await add_message(
             chat_id=chat_id,
             user_id=message.from_user.id,
             role="user",
             content=display_text,
         )
-        
+
         # Шаг 1: Случайная задержка перед "чтением" сообщения (3-15 сек)
         await human_delay()
         
-        # Шаг 2: Показываем "печатает..."
-        await message.answer_chat_action(ChatAction.TYPING)
+        # Шаг 2: ИСПРАВЛЕНО! Показываем "печатает..." через bot
+        await message.bot.send_chat_action(chat_id, ChatAction.TYPING)
+        
+        typing_task = asyncio.create_task(typing_keeper(message.bot, chat_id))
         
         try:
-            # Генерируем ответ пока показываем "печатает..."
             try:
                 answer = await generate_response(
                     history=history,
@@ -218,45 +258,56 @@ async def process_message(
                 )
             except Exception as exc:
                 logging.exception("Generation error: %s", exc)
-                answer = random.choice(
-                    [
-                        "Что-то я зависла... Попробуй еще раз.",
-                        "Мне сейчас трудно собраться с мыслями. Повтори?",
-                        "Хм, у меня что-то оборвалось. Напиши еще раз?",
-                    ]
-                )
-            
-            clean_text, gif_tag = extract_gif_tag(answer)
-            if not clean_text and gif_tag is None:
-                clean_text = "Хм... кажется, я потеряла мысль."
-            
+                answer = random.choice([
+                    "Что-то я зависла... Попробуй еще раз.",
+                    "Мне сейчас трудно собраться с мыслями. Повтори?",
+                    "Хм, у меня что-то оборвалось. Напиши еще раз?",
+                ])
+
             # Сохраняем ответ в историю
             await add_message(
                 chat_id=chat_id,
                 user_id=message.bot.id,
                 role="assistant",
-                content=clean_text or "[гифка]",
+                content=answer,
             )
-            
+
             # Шаг 3: Небольшая пауза "набора текста" перед отправкой
-            if clean_text:
-                await typing_pause(clean_text)
-                
+            await typing_pause(answer)
+            
         finally:
             typing_task.cancel()
-        
-        # Отправляем ответ
-        if clean_text:
-            await send_long_message(message, clean_text)
-        
-        if gif_tag is not None:
-            await send_random_gif(message, gif_tag or None)
-        
+            
+        # Отправляем ответ, разбивая на части (если Альма захотела)
+        await send_split_message(message, answer)
+
         if file_path:
             with suppress(Exception):
                 Path(file_path).unlink(missing_ok=True)
 
 
+async def send_split_message(message: Message, text: str) -> None:
+    """
+    Отправляет текст. Если Альма использовала разделитель '---',
+    текст разбивается на несколько отдельных сообщений.
+    """
+    text = text.strip()
+    if not text:
+        return
+        
+    parts = [p.strip() for p in text.split('\n---\n') if p.strip()]
+    if not parts:
+        parts = [text]
+        
+    for i, part in enumerate(parts):
+        if i > 0:
+            # Имитируем паузу и набор текста между сообщениями
+            await asyncio.sleep(random.uniform(1.0, 2.5))
+            await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            
+        await send_long_message(message, part)
+        
 # ----------------------------
 # Handlers
 # ----------------------------
