@@ -412,19 +412,25 @@ async def main() -> None:
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
-
     if not BOT_TOKEN:
         raise SystemExit("BOT_TOKEN не найден. Добавь его в .env")
-
-    # Инициализация БД (из database.py)
+    
     await init_db()
-
+    
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
     dp.include_router(router)
-
+    
     await set_commands(bot)
-    await dp.start_polling(bot)
+    
+    # Запускаем планировщик дневника
+    from diary import diary_scheduler
+    diary_task = asyncio.create_task(diary_scheduler(bot))
+    
+    try:
+        await dp.start_polling(bot)
+    finally:
+        diary_task.cancel()
 
 
 if __name__ == "__main__":
