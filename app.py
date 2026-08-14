@@ -307,7 +307,7 @@ async def send_split_message(message: Message, text: str) -> None:
             await asyncio.sleep(random.uniform(0.5, 1.5))
             
         await send_long_message(message, part)
-        
+
 # ----------------------------
 # Handlers
 # ----------------------------
@@ -319,12 +319,10 @@ async def cmd_start(message: Message) -> None:
     await save_user(message.from_user)
     await message.answer(
         "Привет. Я Альма.\n"
-        "Могу просто поболтать, посмотреть файлы, прислать гифку или написать что-нибудь в дневник.\n\n"
+        "Могу просто поболтать, посмотреть файлы или написать что-нибудь в дневник.\n\n"
         "Команды:\n"
-        "/gif — случайная гифка\n"
-        "/gif тег — гифка по тегу\n"
         "/reset — очистить память этого чата\n"
-        "/add_gif — добавить гифку, если ответить на нее"
+        "/help — что я умею"
     )
 
 @router.message(Command("help"))
@@ -332,98 +330,36 @@ async def cmd_help(message: Message) -> None:
     await message.answer(
         "Я отвечаю как человек, потому что это эксперимент.\n\n"
         "Можно писать мне текст, кидать файлы, фото, документы.\n"
-        "Если хочешь гифку: /gif\n"
-        "Если хочешь гифку по тегу: /gif fun\n\n"
-        "Админ может добавить гифку:\n"
-        "/add_gif тег\n"
-        "Нужно ответить этой командой на гифку."
+        "Если ты отправишь несколько сообщений подряд, я их прочитаю и отвечу на последнее."
     )
 
-@router.message(Command("gif"))
-async def cmd_gif(message: Message) -> None:
-    parts = (message.text or "").split(maxsplit=1)
-    tag = parts[1].strip() if len(parts) > 1 else None
-    await send_random_gif(message, tag)
-
-@router.message(Command("reset"))
-async def cmd_reset(message: Message) -> None:
-    if message.chat.type != "private" and not is_admin(message):
+@router.message(F.photo | F.document | F.video | F.audio | F.voice)
+async def handle_media(message: Message) -> None:
+    if not message.from_user:
         return
-    await clear_history(message.chat.id)
-    await message.answer("Память этого чата очищена.")
-
-@router.message(Command("add_gif"))
-async def cmd_add_gif(message: Message) -> None:
-    if not is_admin(message):
-        await message.answer("Это команда для администратора.")
-        return
-
-    reply = message.reply_to_message
-    if not reply:
-        await message.answer(
-            "Ответь этой командой на гифку:\n"
-            "/add_gif тег\n\n"
-            "Например:\n"
-            "/add_gif fun"
-        )
-        return
-
-    animation = reply.animation
-    document = reply.document
-
-    if animation:
-        file_id = animation.file_id
-        unique_id = animation.file_unique_id
-    elif document and (
-        document.mime_type in {"image/gif", "video/mp4"}
-        or (document.file_name or "").lower().endswith(".gif")
-    ):
-        file_id = document.file_id
-        unique_id = document.file_unique_id
-    else:
-        await message.answer("Это не похоже на гифку.")
-        return
-
-    parts = (message.text or "").split(maxsplit=1)
-    tag = parts[1].strip() if len(parts) > 1 else None
-    caption = reply.caption or tag
-
-    await add_gif(
-        file_id=file_id,
-        file_unique_id=unique_id,
-        tag=tag,
-        caption=caption,
-        chat_id=message.chat.id,
-    )
-    await message.answer("Гифка сохранена.")
-
-@router.message(F.animation)
-async def handle_incoming_gif(message: Message) -> None:
-    """
-    Сохраняет все гифки, которые присылают Альме.
-    """
-    if not message.animation or not message.from_user:
-        return
-    
-    # Получаем emoji из caption (если есть)
-    emoji = message.caption.strip() if message.caption else None
-    
-    # Сохраняем гифку в базу
-    await save_incoming_gif(
-        file_id=message.animation.file_id,
-        file_unique_id=message.animation.file_unique_id,
-        emoji=emoji,
-        chat_id=message.chat.id,
-        user_id=message.from_user.id,
-    )
-    
-    # Если это не приватный чат и не упоминание - не отвечаем
     if message.chat.type != "private" and not should_answer(message):
         return
-    
-    # Обрабатываем как обычное сообщение
+    file_path = await download_message_file(message)
     caption = message.caption or ""
-    await process_message(message, caption, None)
+    if file_path is None and not caption:
+        await message.answer("Не смогла прочитать файл или он слишком большой.")
+        return
+    await process_message(message, caption, file_path)
+
+@router.message(F.text)
+async def handle_text(message: Message) -> None:
+    if not message.from_user:
+        return
+    if not should_answer(message):
+        return
+        
+    # Команды обрабатываем сразу, без буферизации
+    if message.text.startswith('/'):
+        await process_message(message, message.text)
+        return
+
+    # Обычный текст кладем в буфер (Альма подождет 4 сек)
+    await handle_user_input(message, message.text)
 
 
 @router.message(F.photo | F.document | F.video | F.audio | F.voice)
