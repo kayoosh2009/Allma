@@ -15,7 +15,7 @@ from typing import Dict, Optional
 import aiosqlite
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ChatAction
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, Message
 
 from api import ensure_env_loaded, extract_gif_tag, generate_response
