@@ -93,11 +93,28 @@ async def typing_pause(text: str) -> None:
     words = len(text.split())
     await asyncio.sleep(min(1.0 + words * 0.15 + random.uniform(0.5, 1.5), 8.0))
 
-async def send_long_message(message: Message, text: str) -> None:
+async def send_long_message(message: Message, text: str, reply_to: Optional[int] = None) -> None:
+    """
+    Отправляет длинное сообщение, разбивая его на части при необходимости.
+    Если указан reply_to, первое сообщение будет ответом на указанное.
+    """
     text = text.strip()
-    if not text: return
-    for i in range(0, len(text), MAX_TELEGRAM_MESSAGE_LEN):
-        await message.answer(text[i : i + MAX_TELEGRAM_MESSAGE_LEN])
+    if not text:
+        return
+    
+    parts = [text[i : i + MAX_TELEGRAM_MESSAGE_LEN] for i in range(0, len(text), MAX_TELEGRAM_MESSAGE_LEN)]
+    
+    for idx, part in enumerate(parts):
+        if idx == 0 and reply_to is not None:
+            # Первое сообщение — reply
+            from aiogram.types import ReplyParameters
+            await message.answer(
+                part,
+                reply_parameters=ReplyParameters(message_id=reply_to)
+            )
+        else:
+            # Остальные части — обычные сообщения
+            await message.answer(part)
 
 async def download_message_file(message: Message) -> Optional[str]:
     file_id, suffix = None, ".bin"
@@ -143,7 +160,7 @@ async def process_message(message: Message, text: str, file_path: Optional[str] 
         await human_delay()
         
         # Шаг 2: Явно показываем "печатает..."
-        await message.bot.send_chat_action(chat_id, ChatAction.TYPING)
+        await message.bot.send_chat_action(chat_id, action="typing")
         typing_task = asyncio.create_task(typing_keeper(message.bot, chat_id))
         
         try:
