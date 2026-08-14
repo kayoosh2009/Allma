@@ -158,14 +158,18 @@ async def download_message_file(message: Message) -> Optional[str]:
 
 
 async def send_random_gif(message: Message, tag: Optional[str] = None) -> None:
+    """
+    Отправляет гифку, если она есть в базе.
+    Если гифок нет — просто молча пропускаем этот шаг, чтобы не навязываться.
+    """
     file_id, caption = await get_random_gif(tag)
     if not file_id:
-        await message.answer("У меня пока нет подходящих гифок. Добавь их через /add_gif.")
-        return
+        return  # Молча игнорируем, если база пуста
+    
     try:
         await message.answer_animation(animation=file_id, caption=caption or None)
     except Exception:
-        await message.answer("Не получилось отправить гифку.")
+        pass  # Молча игнорируем ошибки отправки (например, если гифка была удалена)
 
 
 # ----------------------------
@@ -202,7 +206,7 @@ async def process_message(
         await human_delay()
         
         # Шаг 2: Показываем "печатает..."
-        typing_task = asyncio.create_task(typing_keeper(message.bot, chat_id))
+        await message.answer_chat_action(ChatAction.TYPING)
         
         try:
             # Генерируем ответ пока показываем "печатает..."
