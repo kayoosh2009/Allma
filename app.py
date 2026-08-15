@@ -93,6 +93,33 @@ async def typing_pause(text: str) -> None:
     words = len(text.split())
     await asyncio.sleep(min(1.0 + words * 0.15 + random.uniform(0.5, 1.5), 8.0))
 
+async def typing_before_send(
+    bot: Bot,
+    chat_id: int,
+    min_s: float = 3.0,
+    max_s: float = 10.0
+) -> None:
+    """
+    Показывает статус "печатает..." от min_s до max_s секунд.
+    Если нужно ждать дольше 5 секунд, повторяет chat action каждые 4 секунды.
+    """
+    async def _keep_typing() -> None:
+        while True:
+            await asyncio.sleep(4)
+            with suppress(Exception):
+                await bot.send_chat_action(chat_id, ChatAction.TYPING)
+
+    with suppress(Exception):
+        await bot.send_chat_action(chat_id, ChatAction.TYPING)
+
+    task = asyncio.create_task(_keep_typing())
+    try:
+        await asyncio.sleep(random.uniform(min_s, max_s))
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+            
 async def send_long_message(message: Message, text: str, reply_to: Optional[int] = None) -> None:
     """
     Отправляет длинное сообщение, разбивая его на части при необходимости.
@@ -180,13 +207,18 @@ async def process_message(message: Message, text: str, file_path: Optional[str] 
             
         # Шаг 4: Разбиваем ответ на части, если Альма использовала '---'
         parts = [p.strip() for p in answer.split('\n---\n') if p.strip()]
-        if not parts: parts = [answer]
-        
+        if not parts:
+            parts = [answer]
+
         for i, part in enumerate(parts):
-            if i > 0:
-                await asyncio.sleep(random.uniform(1.0, 2.5))
-                await message.bot.send_chat_action(chat_id, ChatAction.TYPING)
-                await asyncio.sleep(random.uniform(0.5, 1.5))
+            if i == 0:
+                # Перед первой частью ответа показываем typing 3-10 секунд
+                await typing_before_send(message.bot, chat_id, 3.0, 10.0)
+            else:
+                # Перед следующими частями можно сделать короче, например 2-5 секунд.
+                # Если хочешь везде 3-10 секунд, поставь тоже (3.0, 10.0).
+                await typing_before_send(message.bot, chat_id, 2.0, 5.0)
+
             await send_long_message(message, part)
 
         if file_path:
