@@ -168,61 +168,69 @@ async def download_message_file(message: Message) -> Optional[str]:
 # ----------------------------
 # Core processing
 # ----------------------------
+# ----------------------------
+# Core processing
+# ----------------------------
 async def process_message(message: Message, text: str, file_path: Optional[str] = None) -> None:
-    if not message.from_user: return
+    if not message.from_user:
+        return
+
     chat_id = message.chat.id
     lock = get_lock(chat_id)
 
     async with lock:
         await save_user(message.from_user)
         history = await get_history(chat_id, MEMORY_LIMIT)
-        
+
         display_text = (text or "").strip()
-        if file_path: display_text = f"{display_text}\n[вложение: {Path(file_path).name}]".strip()
-        if not display_text: display_text = "[пустое сообщение]"
+        if file_path:
+            display_text = f"{display_text}\n[вложение: {Path(file_path).name}]".strip()
+        if not display_text:
+            display_text = "[пустое сообщение]"
 
-        await add_message(chat_id=chat_id, user_id=message.from_user.id, role="user", content=display_text)
+        await add_message(
+            chat_id=chat_id,
+            user_id=message.from_user.id,
+            role="user",
+            content=display_text
+        )
 
-        # Шаг 1: Задержка 3-15 сек
-        await human_delay()
-        
-        # Шаг 2: Явно показываем "печатает..."
-        await message.bot.send_chat_action(chat_id, action="typing")
-        typing_task = asyncio.create_task(typing_keeper(message.bot, chat_id))
-        
+        # Если хочешь оставить старую паузу 3-15 секунд ДО генерации,
+        # раскомментируй:
+        # await human_delay()
+
         try:
-            try:
-                answer = await generate_response(history=history, user_text=display_text, files=[file_path] if file_path else [])
-            except Exception as exc:
-                logging.exception("Generation error: %s", exc)
-                answer = "Что-то я зависла... Попробуй еще раз."
+            answer = await generate_response(
+                history=history,
+                user_text=display_text,
+                files=[file_path] if file_path else []
+            )
+        except Exception as exc:
+            logging.exception("Generation error: %s", exc)
+            answer = "Что-то я зависла... Попробуй еще раз."
 
-            # Сохраняем ответ в историю
-            await add_message(chat_id=chat_id, user_id=message.bot.id, role="assistant", content=answer)
-            
-            # Шаг 3: Пауза "набора текста"
-            await typing_pause(answer)
-        finally:
-            typing_task.cancel()
-            
-        # Шаг 4: Разбиваем ответ на части, если Альма использовала '---'
-        parts = [p.strip() for p in answer.split('\n---\n') if p.strip()]
+        await add_message(
+            chat_id=chat_id,
+            user_id=message.bot.id,
+            role="assistant",
+            content=answer
+        )
+
+        parts = [p.strip() for p in answer.split("\n---\n") if p.strip()]
         if not parts:
             parts = [answer]
 
         for i, part in enumerate(parts):
             if i == 0:
-                # Перед первой частью ответа показываем typing 3-10 секунд
                 await typing_before_send(message.bot, chat_id, 3.0, 10.0)
             else:
-                # Перед следующими частями можно сделать короче, например 2-5 секунд.
-                # Если хочешь везде 3-10 секунд, поставь тоже (3.0, 10.0).
                 await typing_before_send(message.bot, chat_id, 2.0, 5.0)
 
             await send_long_message(message, part)
 
         if file_path:
-            with suppress(Exception): Path(file_path).unlink(missing_ok=True)
+            with suppress(Exception):
+                Path(file_path).unlink(missing_ok=True)
 
 # ----------------------------
 # Handlers
