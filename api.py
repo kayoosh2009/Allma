@@ -19,18 +19,22 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "https://ollama.com")
 
 def _load_tokens() -> list[str]:
     """
-    Читает ключи из переменной окружения OLLAMA_API_KEYS.
-    В .env храните их через запятую, например:
-    OLLAMA_API_KEYS=key1,key2,key3
+    Читает ключи из переменных окружения OLLAMA_API_KEY_1 ... OLLAMA_API_KEY_10.
+    В .env храните каждый ключ на своей строке, например:
+    OLLAMA_API_KEY_1=key1
+    OLLAMA_API_KEY_2=key2
     """
-    raw = os.environ.get("OLLAMA_API_KEYS", "")
-    tokens = [t.strip() for t in raw.split(",") if t.strip()]
+    tokens = []
+    for i in range(1, 11):
+        value = os.environ.get(f"OLLAMA_API_KEY_{i}", "").strip()
+        if value:
+            tokens.append(value)
+
     if not tokens:
         raise RuntimeError(
-            "В .env не найдено ни одного ключа в OLLAMA_API_KEYS "
-            "(ожидается список через запятую, до 10 штук)"
+            "В .env не найдено ни одного ключа в переменных OLLAMA_API_KEY_1..OLLAMA_API_KEY_10"
         )
-    return tokens[:10]
+    return tokens
 
 
 class TokenRotator:
