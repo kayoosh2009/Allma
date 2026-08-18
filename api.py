@@ -7,9 +7,12 @@ import asyncio
 import logging
 import os
 
+from dotenv import load_dotenv
 from ollama import Client
 
 from prompt import SYSTEM_PROMPT
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
